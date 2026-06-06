@@ -71,25 +71,37 @@ class HiveSightApp {
     }
 
     setupEventListeners() {
-        // Keyboard tracking
+        // Keyboard tracking (case-insensitive)
         window.addEventListener('keydown', (e) => {
-            this.keys[e.key] = true;
+            this.keys[e.key.toLowerCase()] = true;
         });
 
         window.addEventListener('keyup', (e) => {
-            this.keys[e.key] = false;
+            this.keys[e.key.toLowerCase()] = false;
         });
 
-        // Mouse drags on Tactical Map
-        const getMousePos = (canvas, evt) => {
-            const rect = canvas.getBoundingClientRect();
+        // Click vs Drag state for 3D camera separation
+        this.clickStartPos = { x: 0, y: 0 };
+        this.clickStartTime = 0;
+
+        // Mouse drags on Tactical Container
+        const container = this.mapCanvas.parentElement;
+
+        const getMousePos = (element, evt) => {
+            const rect = element.getBoundingClientRect();
             return {
                 x: evt.clientX - rect.left,
                 y: evt.clientY - rect.top
             };
         };
 
-        const getGridCoordsFromMouse = (x, y) => {
+        const getGridCoordsFromMouse = (e, localMouse) => {
+            if (this.renderer.is3D) {
+                const coords = this.renderer.get3DGridCoords(e.clientX, e.clientY);
+                if (coords) return coords;
+            }
+            
+            // 2D grid calculations
             const width = this.mapCanvas.width;
             const height = this.mapCanvas.height;
             const cellSize = Math.min(width / this.map.cols, height / this.map.rows);
@@ -97,14 +109,17 @@ class HiveSightApp {
             const offsetY = (height - this.map.rows * cellSize) / 2;
             
             return {
-                x: (x - offsetX) / cellSize,
-                y: (y - offsetY) / cellSize
+                x: (localMouse.x - offsetX) / cellSize,
+                y: (localMouse.y - offsetY) / cellSize
             };
         };
 
-        this.mapCanvas.addEventListener('mousedown', (e) => {
-            const mouse = getMousePos(this.mapCanvas, e);
-            const grid = getGridCoordsFromMouse(mouse.x, mouse.y);
+        container.addEventListener('mousedown', (e) => {
+            this.clickStartPos = { x: e.clientX, y: e.clientY };
+            this.clickStartTime = Date.now();
+
+            const mouse = getMousePos(container, e);
+            const grid = getGridCoordsFromMouse(e, mouse);
 
             // Find closest entity (within 0.6 grid cells)
             let closest = null;
@@ -121,6 +136,11 @@ class HiveSightApp {
             });
 
             if (closest) {
+                // If dragging an enemy in 3D, disable camera orbit controls temporarily
+                if (closest.role === 'enemy' && this.renderer.is3D) {
+                    this.renderer.controls.enabled = false;
+                }
+
                 if (closest.role === 'soldier') {
                     // Select soldier
                     this.selectedId = closest.id;
@@ -140,24 +160,13 @@ class HiveSightApp {
                     this.dragOffsetY = closest.y - grid.y;
                     this.addLog(`Moving enemy ${closest.id}`);
                 }
-            } else {
-                // If empty area clicked, move selected soldier to clicked spot
-                const selected = this.entities.find(e => e.id === this.selectedId);
-                if (selected && grid.x > 0 && grid.x < this.map.cols && grid.y > 0 && grid.y < this.map.rows) {
-                    if (!this.map.isWall(Math.floor(grid.x), Math.floor(grid.y))) {
-                        selected.x = grid.x;
-                        selected.y = grid.y;
-                        selected.patrolPoints = []; // reset patrol
-                        this.addLog(`Dispatched ${selected.id} to tactical grid coords (${grid.x.toFixed(1)}, ${grid.y.toFixed(1)})`);
-                    }
-                }
             }
         });
 
-        this.mapCanvas.addEventListener('mousemove', (e) => {
+        container.addEventListener('mousemove', (e) => {
             if (this.draggedEntity) {
-                const mouse = getMousePos(this.mapCanvas, e);
-                const grid = getGridCoordsFromMouse(mouse.x, mouse.y);
+                const mouse = getMousePos(container, e);
+                const grid = getGridCoordsFromMouse(e, mouse);
                 const newX = grid.x + this.dragOffsetX;
                 const newY = grid.y + this.dragOffsetY;
                 
@@ -167,10 +176,37 @@ class HiveSightApp {
             }
         });
 
-        window.addEventListener('mouseup', () => {
+        window.addEventListener('mouseup', (e) => {
+            // Re-enable camera controls
+            if (this.renderer.is3D) {
+                this.renderer.controls.enabled = true;
+            }
+
             if (this.draggedEntity) {
                 this.addLog(`Enemy ${this.draggedEntity.id} positioned at (${this.draggedEntity.x.toFixed(1)}, ${this.draggedEntity.y.toFixed(1)})`);
                 this.draggedEntity = null;
+            } else {
+                // Determine if this was a quick click rather than a camera drag
+                const dx = e.clientX - this.clickStartPos.x;
+                const dy = e.clientY - this.clickStartPos.y;
+                const distMoved = Math.sqrt(dx*dx + dy*dy);
+                const duration = Date.now() - this.clickStartTime;
+
+                // If mouse barely moved and click was fast, dispatch selected soldier there
+                if (distMoved < 6 && duration < 280) {
+                    const mouse = getMousePos(container, e);
+                    const grid = getGridCoordsFromMouse(e, mouse);
+                    const selected = this.entities.find(ent => ent.id === this.selectedId);
+                    
+                    if (selected && grid.x > 0 && grid.x < this.map.cols && grid.y > 0 && grid.y < this.map.rows) {
+                        if (!this.map.isWall(Math.floor(grid.x), Math.floor(grid.y))) {
+                            selected.x = grid.x;
+                            selected.y = grid.y;
+                            selected.patrolPoints = []; // reset patrol
+                            this.addLog(`Dispatched ${selected.id} to tactical grid coords (${grid.x.toFixed(1)}, ${grid.y.toFixed(1)})`);
+                        }
+                    }
+                }
             }
         });
 

@@ -65,7 +65,7 @@ class Soldier extends BaseEntity {
             const dy = target.y - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist < 0.2) {
+            if (dist < 0.45) {
                 // Next patrol node
                 this.currentPatrolIdx = (this.currentPatrolIdx + 1) % this.patrolPoints.length;
                 if (this.currentPatrolIdx === 0) {
@@ -84,23 +84,25 @@ class Soldier extends BaseEntity {
                     this.yaw += Math.sign(angleDiff) * stepRot;
                 }
 
-                // Move forward
-                const forwardX = Math.cos(this.yaw) * this.speed * dt;
-                const forwardY = Math.sin(this.yaw) * this.speed * dt;
-                
-                const oldX = this.x;
-                const oldY = this.y;
-                this.moveWithCollision(forwardX, forwardY, map);
+                // Only move forward if relatively aligned to target angle to prevent looping/circling
+                if (Math.abs(angleDiff) < 0.4) {
+                    const forwardX = Math.cos(this.yaw) * this.speed * dt;
+                    const forwardY = Math.sin(this.yaw) * this.speed * dt;
+                    
+                    const oldX = this.x;
+                    const oldY = this.y;
+                    this.moveWithCollision(forwardX, forwardY, map);
 
-                // If not moving (stuck against wall), generate a new route
-                if (MathUtils.distance(oldX, oldY, this.x, this.y) < 0.05 * this.speed * dt) {
-                    this.stuckTimer += dt;
-                    if (this.stuckTimer > 0.5) {
-                        this.generateNewPatrolRoute(map);
+                    // If not moving (stuck against wall), generate a new route
+                    if (MathUtils.distance(oldX, oldY, this.x, this.y) < 0.05 * this.speed * dt) {
+                        this.stuckTimer += dt;
+                        if (this.stuckTimer > 0.5) {
+                            this.generateNewPatrolRoute(map);
+                            this.stuckTimer = 0;
+                        }
+                    } else {
                         this.stuckTimer = 0;
                     }
-                } else {
-                    this.stuckTimer = 0;
                 }
             }
         }
