@@ -36,13 +36,17 @@ class Soldier extends BaseEntity {
     update(dt, map, keyboardState, isSelected) {
         if (isSelected && !this.autoPatrol) {
             // Manual control
+            const isPressed = (key) => {
+                return keyboardState[key.toLowerCase()] || keyboardState[key];
+            };
+
             let moveDir = 0;
-            if (keyboardState['w'] || keyboardState['ArrowUp']) moveDir = 1;
-            if (keyboardState['s'] || keyboardState['ArrowDown']) moveDir = -1;
+            if (isPressed('w') || isPressed('arrowup') || isPressed('ArrowUp')) moveDir = 1;
+            if (isPressed('s') || isPressed('arrowdown') || isPressed('ArrowDown')) moveDir = -1;
 
             let rotDir = 0;
-            if (keyboardState['a'] || keyboardState['ArrowLeft']) rotDir = -1;
-            if (keyboardState['d'] || keyboardState['ArrowRight']) rotDir = 1;
+            if (isPressed('a') || isPressed('arrowleft') || isPressed('ArrowLeft')) rotDir = -1;
+            if (isPressed('d') || isPressed('arrowright') || isPressed('ArrowRight')) rotDir = 1;
 
             // Update heading
             this.yaw += rotDir * this.rotSpeed * dt;
